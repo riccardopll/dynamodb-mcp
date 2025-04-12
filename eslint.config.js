@@ -16,4 +16,7 @@ export default defineConfig([
   },
   tseslint.configs.recommended,
   eslintConfigPrettier,
+  {
+    ignores: ["build/**", "node_modules/**"],
+  },
 ]);
