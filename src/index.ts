@@ -7,8 +7,12 @@ import { fromIni } from "@aws-sdk/credential-providers";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadSharedConfigFiles } from "@smithy/shared-ini-file-loader";
-import { z } from "zod";
-import { extract } from "fuzzball";
+
+const client = new DynamoDBClient({
+  credentials: fromIni({ profile: process.env.AWS_PROFILE! }),
+  region: (await loadSharedConfigFiles()).configFile?.[process.env.AWS_PROFILE!]
+    ?.region,
+});
 
 const server = new McpServer({
   name: "dynamodb-mcp",
@@ -20,45 +24,26 @@ const server = new McpServer({
 });
 
 server.tool(
-  "describe",
-  "Describe a DynamoDB table",
-  {
-    profile: z.string().describe("AWS profile name").default("default"),
-    table: z.string().describe("DynamoDB table name"),
-  },
-  async ({ profile, table }) => {
-    const client = new DynamoDBClient({
-      credentials: fromIni({ profile }),
-      region: (await loadSharedConfigFiles()).configFile?.[profile]?.region,
-    });
-    const { TableNames = [] } = await client.send(new ListTablesCommand({}));
-    const actualTable = extract(table, TableNames, {
-      returnObjects: true,
-      cutoff: 60,
-    }).at(0)?.choice as string;
-    if (!actualTable) {
-      return {
-        isError: true,
-        content: [
-          {
-            type: "text",
-            text: `Table "${table}" not found. Available tables: ${TableNames?.join(", ")}`,
-          },
-        ],
-      };
-    }
-    const result = await client.send(
-      new DescribeTableCommand({
-        TableName: actualTable,
-      }),
-    );
+  "schema",
+  "Ask questions about the schema of all DynamoDB tables.",
+  async () => {
+    const tables = await client
+      .send(new ListTablesCommand({}))
+      .then(({ TableNames = [] }) =>
+        TableNames.map(async (table) => {
+          const output = await client.send(
+            new DescribeTableCommand({
+              TableName: table,
+            }),
+          );
+          return output.Table;
+        }),
+      );
     return {
       content: [
         {
           type: "text",
-          text:
-            `Actual table name: ${actualTable}\n` +
-            `Table description: ${JSON.stringify(result.Table ?? {})}`,
+          text: `Schema: ${JSON.stringify(await Promise.all(tables))}`,
         },
       ],
     };
