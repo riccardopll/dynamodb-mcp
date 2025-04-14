@@ -35,6 +35,7 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.788.0",
     "@aws-sdk/credential-providers": "^3.787.0",
+    "@isaacs/ttlcache": "^1.4.1",
     "@modelcontextprotocol/sdk": "^1.9.0",
     "@smithy/shared-ini-file-loader": "^4.0.2",
     "fuzzball": "^2.2.2",

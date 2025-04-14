@@ -1,54 +1,72 @@
-import {
-  DescribeTableCommand,
-  DynamoDBClient,
-  ListTablesCommand,
-} from "@aws-sdk/client-dynamodb";
-import { fromIni } from "@aws-sdk/credential-providers";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { loadSharedConfigFiles } from "@smithy/shared-ini-file-loader";
-
-const client = new DynamoDBClient({
-  credentials: fromIni({ profile: process.env.AWS_PROFILE! }),
-  region: (await loadSharedConfigFiles()).configFile?.[process.env.AWS_PROFILE!]
-    ?.region,
-});
+import { db } from "./db.js";
+import { z } from "zod";
+import tryCatch from "./try-catch.js";
+import { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 
 const server = new McpServer({
   name: "dynamodb-mcp",
   version: "1.0.0",
   capabilities: {
-    resources: {},
     tools: {},
   },
 });
 
+server.tool("schema", "Get the database schema.", async () => {
+  const schema = await db.getSchema();
+  return {
+    content: [
+      {
+        type: "text",
+        text: `Schema: ${JSON.stringify(schema)}`,
+      },
+    ],
+  };
+});
+
 server.tool(
-  "schema",
-  "Ask questions about the schema of all DynamoDB tables.",
-  async () => {
-    const tables = await client
-      .send(new ListTablesCommand({}))
-      .then(({ TableNames = [] }) =>
-        TableNames.map(async (table) => {
-          const output = await client.send(
-            new DescribeTableCommand({
-              TableName: table,
-            }),
-          );
-          return output.Table;
-        }),
-      );
+  "query",
+  "Run a query against the database.",
+  {
+    table: z.string().describe("The name of the table to query."),
+    key: z.string().describe("The key to query."),
+    indexName: z
+      .string()
+      .optional()
+      .describe("The name of the index to query."),
+  },
+  async ({ table, key, indexName }) => {
+    const { data, error } = await tryCatch(
+      db.query({
+        table,
+        key,
+        indexName,
+      }),
+    );
+    if (error) return handleError(error);
     return {
       content: [
         {
           type: "text",
-          text: `Schema: ${JSON.stringify(await Promise.all(tables))}`,
+          text: `Query result: ${JSON.stringify(data)}`,
         },
       ],
     };
   },
 );
+
+function handleError(error: Error): CallToolResult {
+  return {
+    isError: true,
+    content: [
+      {
+        type: "text",
+        text: `Error: ${error.message}`,
+      },
+    ],
+  };
+}
 
 async function main() {
   const transport = new StdioServerTransport();

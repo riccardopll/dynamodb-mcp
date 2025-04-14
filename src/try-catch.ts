@@ -1,7 +1,6 @@
-export default async function tryCatch<T>(promise: Promise<T>): Promise<{
-  data: T | undefined;
-  error: Error | undefined;
-}> {
+export default async function tryCatch<T>(
+  promise: Promise<T>,
+): Promise<{ data: T; error: undefined } | { data: undefined; error: Error }> {
   return promise
     .then((data) => ({
       data,
